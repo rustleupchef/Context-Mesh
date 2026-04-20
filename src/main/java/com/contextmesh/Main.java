@@ -1,0 +1,175 @@
+package com.contextmesh;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Scanner;
+
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.document.KnnFloatVectorField;
+import org.apache.lucene.document.TextField;
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.StoredFields;
+import org.apache.lucene.index.VectorSimilarityFunction;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.KnnFloatVectorQuery;
+import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.FSDirectory;
+import org.apache.tika.Tika;
+
+import ai.djl.inference.Predictor;
+import ai.djl.repository.zoo.Criteria;
+import ai.djl.repository.zoo.ModelZoo;
+import ai.djl.repository.zoo.ZooModel;
+
+class Paired {
+    public String path;
+    public String text;
+
+    Paired(String path, String text) {
+        this.path = path;
+        this.text = text;
+    }
+}
+
+public class Main {
+
+    private static Directory getDirectory(String outputPath) throws IOException {
+        File directory = Path.of(outputPath).resolve(".index/").toFile();
+        directory.mkdirs();
+
+        return FSDirectory.open(Path.of(outputPath).resolve(".index/"));
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(Math.min(value, max), min);
+    }
+
+    private static boolean isTextBased(String mimeType) {
+        return mimeType.startsWith("text/")
+                || mimeType.equals("application/json")
+                || mimeType.equals("application/xml")
+                || mimeType.equals("application/xhtml+xml")
+                || mimeType.equals("application/javascript")
+                || mimeType.equals("application/x-sh")
+                || mimeType.contains("wordprocessingml")
+                || mimeType.contains("spreadsheetml")
+                || mimeType.contains("presentationml")
+                || mimeType.equals("application/pdf")
+                || mimeType.equals("application/rtf");
+    }
+
+    public static void main(String[] args) throws Exception {
+        if (args.length < 3) {
+            args = new String[3];
+            System.out.println("Schema; java -jar [jar_name] [input_path] [output_path] [query]");
+
+            Scanner scanner = new Scanner(System.in);
+
+            System.out.print("Input Path: ");
+            args[0] = scanner.nextLine();
+
+            System.out.print("Output Path: ");
+            args[1] = scanner.nextLine();
+
+            System.out.print("Query: ");
+            args[2] = scanner.nextLine();
+
+            scanner.close();
+        }
+
+        final String input_path = args[0], output_path = args[1];
+        final File inputDir = new File(input_path), outputDir = new File(output_path);
+        final String prompt = args[2];
+
+        if (!inputDir.isDirectory() || !outputDir.isDirectory()) {
+            System.out.println("Please enter only directories");
+            System.exit(1);
+        }
+
+        File[] contextFiles = inputDir.listFiles();
+        Tika tika = new Tika();
+
+        ArrayList<Paired> pairs = new ArrayList<>();
+        HashSet<String> uniqueNames = new HashSet<String>();
+        for (File file : contextFiles) {
+            String mimeType = tika.detect(file.getName());
+            if (!isTextBased(mimeType))
+                break;
+
+            String baseName = file.getName().replaceFirst("[.][^.]+$", "");
+            if (uniqueNames.contains(baseName)) {
+                int counter = 0;
+                while (uniqueNames.contains(baseName + counter))
+                    counter++;
+
+                baseName += counter;
+            }
+            uniqueNames.add(baseName);
+
+            String text = tika.parseToString(file);
+            File outputFile = Path.of(output_path).resolve(baseName + ".txt").toFile();
+            FileWriter writer = new FileWriter(outputFile);
+            writer.write(text);
+            writer.close();
+
+            pairs.add(new Paired(outputFile.getAbsolutePath(), text));
+        }
+
+        Criteria<String, float[]> criteria = Criteria.builder()
+            .setTypes(String.class, float[].class)
+            .optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/all-MiniLM-L6-v2")
+            .optEngine("PyTorch")
+            .build();
+        
+        ZooModel<String, float[]> model = ModelZoo.loadModel(criteria);
+        Predictor<String, float[]> embedder = model.newPredictor();
+
+        Directory directory = getDirectory(output_path);
+
+        StandardAnalyzer analyzer = new StandardAnalyzer();
+        IndexWriterConfig config = new IndexWriterConfig(analyzer);
+        IndexWriter writer = new IndexWriter(directory, config);
+
+
+        for (Paired pair : pairs) {
+            float[] vector = embedder.predict(pair.text);
+
+            Document doc = new Document();
+            doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
+            System.out.println(pair.text);
+            doc.add(new TextField("content", pair.text, Field.Store.YES));
+            doc.add(new TextField("path", pair.path, Field.Store.YES));
+            writer.addDocument(doc);
+        }
+        writer.commit();
+        writer.close();
+
+        DirectoryReader reader = DirectoryReader.open(directory);
+        IndexSearcher searcher = new IndexSearcher(reader);
+
+        KnnFloatVectorQuery query = new KnnFloatVectorQuery("embedding", embedder.predict(prompt), 10);
+        TopDocs results = searcher.search(query, clamp(10, 1, pairs.size()));
+        StoredFields storedFields = searcher.storedFields();
+
+        for (ScoreDoc doc : results.scoreDocs) {
+            Document document = storedFields.document(doc.doc);
+            String content = document.get("content");
+            String path = document.get("path");
+
+            System.out.println("Content: " + content + "\tPath: " + path + "\tScore:" + doc.score);
+        }
+
+        reader.close();
+    }
+
+}
