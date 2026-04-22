@@ -53,10 +53,6 @@ public class Main {
         return FSDirectory.open(Path.of(outputPath).resolve(".index/"));
     }
 
-    private static int clamp(int value, int min, int max) {
-        return Math.max(Math.min(value, max), min);
-    }
-
     private static boolean isTextBased(String mimeType) {
         return mimeType.startsWith("text/")
                 || mimeType.equals("application/json")
@@ -160,7 +156,7 @@ public class Main {
         IndexSearcher searcher = new IndexSearcher(reader);
 
         KnnFloatVectorQuery query = new KnnFloatVectorQuery("embedding", embedder.predict(prompt), 10);
-        TopDocs results = searcher.search(query, clamp(10, 1, pairs.size()/2));
+        TopDocs results = searcher.search(query, 4);
         StoredFields storedFields = searcher.storedFields();
 
         HashMap<String, Float> uniquePaths = new HashMap<String, Float>();
