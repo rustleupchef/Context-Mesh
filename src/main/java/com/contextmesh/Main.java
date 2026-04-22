@@ -5,6 +5,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Scanner;
 
@@ -24,12 +25,14 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.poi.ss.formula.functions.Single;
 import org.apache.tika.Tika;
 
 import ai.djl.inference.Predictor;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelZoo;
 import ai.djl.repository.zoo.ZooModel;
+import ai.djl.util.Pair;
 
 class Paired {
     public String path;
@@ -102,9 +105,9 @@ public class Main {
         ArrayList<Paired> pairs = new ArrayList<>();
         HashSet<String> uniqueNames = new HashSet<String>();
         for (File file : contextFiles) {
-            String mimeType = tika.detect(file.getName());
+            String mimeType = tika.detect(file);
             if (!isTextBased(mimeType))
-                break;
+                continue;
 
             String baseName = file.getName().replaceFirst("[.][^.]+$", "");
             if (uniqueNames.contains(baseName)) {
@@ -146,7 +149,6 @@ public class Main {
 
             Document doc = new Document();
             doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
-            System.out.println(pair.text);
             doc.add(new TextField("content", pair.text, Field.Store.YES));
             doc.add(new TextField("path", pair.path, Field.Store.YES));
             writer.addDocument(doc);
@@ -158,15 +160,21 @@ public class Main {
         IndexSearcher searcher = new IndexSearcher(reader);
 
         KnnFloatVectorQuery query = new KnnFloatVectorQuery("embedding", embedder.predict(prompt), 10);
-        TopDocs results = searcher.search(query, clamp(10, 1, pairs.size()));
+        TopDocs results = searcher.search(query, clamp(10, 1, pairs.size()/2));
         StoredFields storedFields = searcher.storedFields();
 
+        HashMap<String, Float> uniquePaths = new HashMap<String, Float>();
         for (ScoreDoc doc : results.scoreDocs) {
             Document document = storedFields.document(doc.doc);
-            String content = document.get("content");
             String path = document.get("path");
+            
+            if (!uniquePaths.containsKey(path)) {
+                uniquePaths.put(path, doc.score);
+            }
+        }
 
-            System.out.println("Content: " + content + "\tPath: " + path + "\tScore:" + doc.score);
+        for (String path : uniquePaths.keySet()) {
+            System.out.println("Path: " + path + "\tScore:" + uniquePaths.get(path));
         }
 
         reader.close();

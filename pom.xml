@@ -21,6 +21,11 @@
             <scope>compile</scope>
         </dependency>
         <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-parsers-standard-package</artifactId>
+            <version>3.3.0</version>
+        </dependency>
+        <dependency>
             <groupId>ai.djl</groupId>
             <artifactId>api</artifactId>
             <version>0.31.0</version>
