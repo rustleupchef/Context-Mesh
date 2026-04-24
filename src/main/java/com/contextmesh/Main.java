@@ -1,8 +1,10 @@
 package com.contextmesh;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -79,7 +81,7 @@ public class Main {
             args[1] = scanner.nextLine();
 
             System.out.print("Query: ");
-            args[2] = scanner.nextLine();
+            args[2] = scanner.nextLine().toLowerCase();
 
             scanner.close();
         }
@@ -98,6 +100,29 @@ public class Main {
 
         ArrayList<Paired> pairs = new ArrayList<>();
         HashSet<String> uniqueNames = new HashSet<String>();
+
+        File dir = Path.of(output_path).resolve("input/").toFile();
+        ProcessBuilder builder = new ProcessBuilder();
+        Process process;
+        builder.directory(dir);
+
+        if (dir.mkdirs()) {
+            builder.command("git", "init");
+            process = builder.start();
+            process.waitFor();
+        }
+
+        builder.command("bash", "-c", "ls -a | grep .git");
+        process = builder.start();
+        process.waitFor();
+
+        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        if (bufferedReader.readLine() == null) {
+            builder.command("git", "init");
+            process = builder.start();
+            process.waitFor();
+        }
+
         for (File file : contextFiles) {
             String mimeType = tika.detect(file);
             if (!isTextBased(mimeType))
@@ -113,8 +138,8 @@ public class Main {
             }
             uniqueNames.add(baseName);
 
-            String text = tika.parseToString(file);
-            File outputFile = Path.of(output_path).resolve(baseName + ".txt").toFile();
+            String text = tika.parseToString(file).toLowerCase();
+            File outputFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
             FileWriter writer = new FileWriter(outputFile);
             writer.write(text);
             writer.close();
@@ -133,22 +158,44 @@ public class Main {
 
         Directory directory = getDirectory(output_path);
 
-        StandardAnalyzer analyzer = new StandardAnalyzer();
-        IndexWriterConfig config = new IndexWriterConfig(analyzer);
-        IndexWriter writer = new IndexWriter(directory, config);
+        builder.command("git", "diff");
+        process = builder.start();
+        process.waitFor();
+        bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        String output1 = bufferedReader.readLine();
 
+        builder.command("git", "log");
+        process = builder.start();
+        process.waitFor();
+        bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        String output2 = bufferedReader.readLine();
 
-        for (Paired pair : pairs) {
-            float[] vector = embedder.predict(pair.text);
+        if (output1 != null || output2 == null) {
+            builder.command("git", "add", ".");
+            process = builder.start();
+            process.waitFor();
 
-            Document doc = new Document();
-            doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
-            doc.add(new TextField("content", pair.text, Field.Store.YES));
-            doc.add(new TextField("path", pair.path, Field.Store.YES));
-            writer.addDocument(doc);
+            builder.command("git", "commit", "-m", "\"change\"");
+            process = builder.start();
+            process.waitFor();
+
+            StandardAnalyzer analyzer = new StandardAnalyzer();
+            IndexWriterConfig config = new IndexWriterConfig(analyzer);
+            IndexWriter writer = new IndexWriter(directory, config);
+    
+    
+            for (Paired pair : pairs) {
+                float[] vector = embedder.predict(pair.text);
+    
+                Document doc = new Document();
+                doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
+                doc.add(new TextField("content", pair.text, Field.Store.YES));
+                doc.add(new TextField("path", pair.path, Field.Store.YES));
+                writer.addDocument(doc);
+            }
+            writer.commit();
+            writer.close();
         }
-        writer.commit();
-        writer.close();
 
         DirectoryReader reader = DirectoryReader.open(directory);
         IndexSearcher searcher = new IndexSearcher(reader);
