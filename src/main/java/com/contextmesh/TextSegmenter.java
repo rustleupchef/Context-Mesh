@@ -20,6 +20,10 @@ public class TextSegmenter {
         this.lines = content.split("\\r?\\n");
     }
 
+    public String[] getLines() {
+        return lines;
+    }
+
     public String[] getParagraphs() {
         return content.split("\\n\\s*\\n");
     }
