@@ -149,7 +149,7 @@ public class Main {
 
         Criteria<String, float[]> criteria = Criteria.builder()
             .setTypes(String.class, float[].class)
-            .optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/all-MiniLM-L6-v2")
+            .optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/all-mpnet-base-v2")
             .optEngine("PyTorch")
             .build();
         
