@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Scanner;
+import java.util.UUID;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
@@ -36,10 +37,12 @@ import ai.djl.repository.zoo.ZooModel;
 
 class Paired {
     public String path;
+    public String basePath;
     public String text;
 
-    Paired(String path, String text) {
+    Paired(String path, String basePath, String text) {
         this.path = path;
+        this.basePath = basePath;
         this.text = text;
     }
 }
@@ -99,7 +102,6 @@ public class Main {
         Tika tika = new Tika();
 
         ArrayList<Paired> pairs = new ArrayList<>();
-        HashSet<String> uniqueNames = new HashSet<String>();
 
         File dir = Path.of(output_path).resolve("input/").toFile();
         ProcessBuilder builder = new ProcessBuilder();
@@ -128,15 +130,7 @@ public class Main {
             if (!isTextBased(mimeType))
                 continue;
 
-            String baseName = file.getName().replaceFirst("[.][^.]+$", "");
-            if (uniqueNames.contains(baseName)) {
-                int counter = 0;
-                while (uniqueNames.contains(baseName + counter))
-                    counter++;
-
-                baseName += counter;
-            }
-            uniqueNames.add(baseName);
+            String baseName = UUID.randomUUID().toString();
 
             String text = tika.parseToString(file).toLowerCase();
             File outputFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
@@ -144,7 +138,14 @@ public class Main {
             writer.write(text);
             writer.close();
 
-            pairs.add(new Paired(outputFile.getAbsolutePath(), text));
+            pairs.add(new Paired(outputFile.getAbsolutePath(), file.getAbsolutePath(), text));
+
+            // Lines Segmentation
+            // Paragraphs Segmentation
+            // Pages Segmentation
+            // Sentences Segmentation
+            // Sections Segmentation
+            // Key Information Extraction
         }
 
         Criteria<String, float[]> criteria = Criteria.builder()
@@ -191,6 +192,7 @@ public class Main {
                 doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
                 doc.add(new TextField("content", pair.text, Field.Store.YES));
                 doc.add(new TextField("path", pair.path, Field.Store.YES));
+                doc.add(new TextField("basePath", pair.basePath, Field.Store.YES));
                 writer.addDocument(doc);
             }
             writer.commit();
@@ -201,21 +203,31 @@ public class Main {
         IndexSearcher searcher = new IndexSearcher(reader);
 
         KnnFloatVectorQuery query = new KnnFloatVectorQuery("embedding", embedder.predict(prompt), 10);
-        TopDocs results = searcher.search(query, 4);
+        TopDocs results = searcher.search(query, pairs.size());
         StoredFields storedFields = searcher.storedFields();
 
-        HashMap<String, Float> uniquePaths = new HashMap<String, Float>();
+        HashSet<String> uniquePaths = new HashSet<>();
         for (ScoreDoc doc : results.scoreDocs) {
             Document document = storedFields.document(doc.doc);
-            String path = document.get("path");
-            
-            if (!uniquePaths.containsKey(path)) {
-                uniquePaths.put(path, doc.score);
-            }
-        }
+            String path = document.get("basePath");
 
-        for (String path : uniquePaths.keySet()) {
-            System.out.println("Path: " + path + "\tScore:" + uniquePaths.get(path));
+            if (!uniquePaths.contains(path)) {
+                uniquePaths.add(path);
+            }
+
+            for (int i = 0; i < 30; i++) {
+                System.out.print("=");
+            }
+            System.out.println();
+
+            System.out.println("Base Path: " + path);
+            System.out.println("Path: " + document.get("path"));
+            System.out.println("Score: " + doc.score);
+
+            for (int i = 0; i < 30; i++) {
+                System.out.print("=");
+            }
+            System.out.println();
         }
 
         reader.close();
