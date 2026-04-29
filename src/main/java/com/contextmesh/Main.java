@@ -1,16 +1,24 @@
 package com.contextmesh;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.internal.GsonBuildConfig;
+import com.sun.net.httpserver.HttpServer;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
@@ -34,6 +42,7 @@ import ai.djl.inference.Predictor;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelZoo;
 import ai.djl.repository.zoo.ZooModel;
+import ai.djl.translate.TranslateException;
 
 class Paired {
     public String path;
@@ -44,6 +53,26 @@ class Paired {
         this.path = path;
         this.basePath = basePath;
         this.text = text;
+    }
+}
+
+class PromptPayload {
+    public String prompt;
+
+    PromptPayload(String prompt) {
+        this.prompt = prompt;
+    }
+}
+
+class DocumentPayload {
+    public String path;
+    public String basePath;
+    public float score;
+
+    DocumentPayload(String path, String basePath, float score) {
+        this.path = path;
+        this.basePath = basePath;
+        this.score = score;
     }
 }
 
@@ -97,8 +126,8 @@ public class Main {
 
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 3) {
-            args = new String[3];
+        if (args.length < 2) {
+            args = new String[2];
             System.out.println("Schema; java -jar [jar_name] [input_path] [output_path] [query]");
 
             Scanner scanner = new Scanner(System.in);
@@ -109,15 +138,11 @@ public class Main {
             System.out.print("Output Path: ");
             args[1] = scanner.nextLine();
 
-            System.out.print("Query: ");
-            args[2] = scanner.nextLine().toLowerCase();
-
             scanner.close();
         }
 
         final String input_path = args[0], output_path = args[1];
         final File inputDir = new File(input_path), outputDir = new File(output_path);
-        final String prompt = args[2];
 
         if (!inputDir.isDirectory() || !outputDir.isDirectory()) {
             System.out.println("Please enter only directories");
@@ -298,38 +323,65 @@ public class Main {
             System.out.println(milliSecondsToTime(System.currentTimeMillis() - startTime) + "\n\n");
         }
 
-        DirectoryReader reader = DirectoryReader.open(directory);
-        IndexSearcher searcher = new IndexSearcher(reader);
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
 
-        KnnFloatVectorQuery query = new KnnFloatVectorQuery("embedding", embedder.predict(prompt), 10);
-        TopDocs results = searcher.search(query, pairs.size());
-        StoredFields storedFields = searcher.storedFields();
+        server.createContext("/api/prompt", exchange -> {
+            if ("POST".equals(exchange.getRequestMethod())) {
+                String requestBody = new String(
+                    exchange.getRequestBody().readAllBytes(),
+                    StandardCharsets.UTF_8
+                );
 
-        HashSet<String> uniquePaths = new HashSet<>();
-        for (ScoreDoc doc : results.scoreDocs) {
-            Document document = storedFields.document(doc.doc);
-            String path = document.get("basePath");
+                DirectoryReader reader = DirectoryReader.open(directory);
+                IndexSearcher searcher = new IndexSearcher(reader);
 
-            if (!uniquePaths.contains(path)) {
-                uniquePaths.add(path);
+                PromptPayload payload = new Gson().fromJson(requestBody, PromptPayload.class);
+                KnnFloatVectorQuery query = null;
+                try {
+                    query = new KnnFloatVectorQuery("embedding", embedder.predict(payload.prompt), 10);
+                } catch (TranslateException e) {
+                    e.printStackTrace();
+                }
+                TopDocs results = searcher.search(query, pairs.size());
+                StoredFields storedFields = searcher.storedFields();
+
+                ArrayList<DocumentPayload> responsePayload = new ArrayList<>();
+                HashSet<String> uniquePaths = new HashSet<>();
+                for (ScoreDoc doc : results.scoreDocs) {
+                    Document document = storedFields.document(doc.doc);
+                    String path = document.get("basePath");
+
+                    if (!uniquePaths.contains(path)) {
+                        uniquePaths.add(path);
+                    }
+
+                    DocumentPayload docPayload = new DocumentPayload(
+                        document.get("path"),
+                        document.get("basePath"),
+                        doc.score
+                    );
+                    responsePayload.add(docPayload);
+                }
+
+                reader.close();
+                exchange.sendResponseHeaders(200, 0);
+                exchange.getResponseBody().write(
+                    new GsonBuilder()
+                        .setPrettyPrinting()
+                        .create()
+                        .toJson(responsePayload)
+                        .getBytes(StandardCharsets.UTF_8)
+                );
+
+            } else {
+                exchange.sendResponseHeaders(405, -1);
             }
+            exchange.close();
+        });
+        server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
+        server.start();
 
-            for (int i = 0; i < 30; i++) {
-                System.out.print("=");
-            }
-            System.out.println();
-
-            System.out.println("Base Path: " + path);
-            System.out.println("Path: " + document.get("path"));
-            System.out.println("Score: " + doc.score);
-
-            for (int i = 0; i < 30; i++) {
-                System.out.print("=");
-            }
-            System.out.println();
-        }
-
-        reader.close();
+        System.out.println("Server started on port 8080");
     }
 
 }
