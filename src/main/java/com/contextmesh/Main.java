@@ -9,6 +9,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.UUID;
 
@@ -140,12 +142,51 @@ public class Main {
 
             pairs.add(new Paired(outputFile.getAbsolutePath(), file.getAbsolutePath(), text));
 
+            TextSegmenter segmenter = new TextSegmenter(text);
+
             // Lines Segmentation
+            String[] lines = segmenter.getLines();
+            for (String line : lines) {
+                baseName = UUID.randomUUID().toString();
+                File lineFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
+                FileWriter lineWriter = new FileWriter(lineFile);
+                lineWriter.write(line);
+                lineWriter.close();
+                pairs.add(new Paired(lineFile.getAbsolutePath(), file.getAbsolutePath(), line));
+            }
+
             // Paragraphs Segmentation
+            String[] paragraphs = segmenter.getParagraphs();
+            for (String para : paragraphs) {
+                baseName = UUID.randomUUID().toString();
+                File paraFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
+                FileWriter paraWriter = new FileWriter(paraFile);
+                paraWriter.write(para);
+                paraWriter.close();
+                pairs.add(new Paired(paraFile.getAbsolutePath(), file.getAbsolutePath(), para));
+            }
+
             // Pages Segmentation
+            String[] pages = segmenter.getPages();
+            for (String page : pages) {
+                baseName = UUID.randomUUID().toString();
+                File pageFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
+                FileWriter pageWriter = new FileWriter(pageFile);
+                pageWriter.write(page);
+                pageWriter.close();
+                pairs.add(new Paired(pageFile.getAbsolutePath(), file.getAbsolutePath(), page));
+            }
+
             // Sentences Segmentation
-            // Sections Segmentation
-            // Key Information Extraction
+            String[] sentences = segmenter.getSentences();
+            for (String sentence : sentences) {
+                baseName = UUID.randomUUID().toString();
+                File sentenceFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
+                FileWriter sentenceWriter = new FileWriter(sentenceFile);
+                sentenceWriter.write(sentence);
+                sentenceWriter.close();
+                pairs.add(new Paired(sentenceFile.getAbsolutePath(), file.getAbsolutePath(), sentence));
+            }
         }
 
         Criteria<String, float[]> criteria = Criteria.builder()
