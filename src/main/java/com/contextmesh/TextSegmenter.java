@@ -55,37 +55,4 @@ public class TextSegmenter {
         }
         return sections;
     }
-
-    public List<String> extractKeyInfo(int topN) {
-        String[] sentences = this.getSentences();
-        
-        Map<String, Long> docFreq = new HashMap<>();
-        List<Map<String, Long>> sentenceTerms = new ArrayList<>();
-
-        for (String sent : sentences) {
-            Map<String, Long> tf = Arrays.stream(sent.toLowerCase().split("\\W+"))
-                .filter(w -> w.length() > 3) // skip short words
-                .collect(Collectors.groupingBy(w -> w, Collectors.counting()));
-            sentenceTerms.add(tf);
-            tf.keySet().forEach(w -> docFreq.merge(w, 1L, Long::sum));
-        }
-
-        int N = sentences.length;
-        double[] scores = new double[N];
-        for (int i = 0; i < N; i++) {
-            for (Map.Entry<String, Long> e : sentenceTerms.get(i).entrySet()) {
-                double tf = e.getValue();
-                double idf = Math.log((double) N / (docFreq.get(e.getKey()) + 1));
-                scores[i] += tf * idf;
-            }
-        }
-
-        Integer[] idx = IntStream.range(0, N).boxed().toArray(Integer[]::new);
-        Arrays.sort(idx, (a, b) -> Double.compare(scores[b], scores[a]));
-        
-        return Arrays.stream(Arrays.copyOf(idx, topN))
-            .sorted()
-            .map(i -> sentences[i])
-            .collect(Collectors.toList());
-    }
 }
