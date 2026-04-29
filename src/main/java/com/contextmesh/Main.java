@@ -8,6 +8,7 @@ import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.UUID;
 
@@ -69,7 +70,7 @@ public class Main {
                 || mimeType.equals("application/rtf");
     }
 
-    public static void printProgress(int current, int total) {
+    private static void printProgress(int current, int total) {
         int percent = (current * 100) / total;
         int barWidth = 20; // total characters in the bar
         int completed = (current * barWidth) / total;
@@ -159,53 +160,65 @@ public class Main {
             pairs.add(new Paired(outputFile.getAbsolutePath(), file.getAbsolutePath(), text));
 
             TextSegmenter segmenter = new TextSegmenter(text);
-
-            // Lines Segmentation
-            String[] lines = segmenter.getLines();
-            for (String line : lines) {
-                baseName = UUID.randomUUID().toString();
-                File lineFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                FileWriter lineWriter = new FileWriter(lineFile);
-                lineWriter.write(line);
-                lineWriter.close();
-                pairs.add(new Paired(lineFile.getAbsolutePath(), file.getAbsolutePath(), line));
-            }
+            final int minLength = 200;
 
             // Paragraphs Segmentation
             String[] paragraphs = segmenter.getParagraphs();
-            for (String para : paragraphs) {
-                baseName = UUID.randomUUID().toString();
-                File paraFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                FileWriter paraWriter = new FileWriter(paraFile);
-                paraWriter.write(para);
-                paraWriter.close();
-                pairs.add(new Paired(paraFile.getAbsolutePath(), file.getAbsolutePath(), para));
+            if (paragraphs.length > 0) {
+                for (String para : paragraphs) {
+
+                    if (para.strip().isEmpty()) continue;
+                    if (para.length() < minLength) continue;
+
+                    baseName = UUID.randomUUID().toString();
+                    File paraFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
+                    FileWriter paraWriter = new FileWriter(paraFile);
+                    paraWriter.write(para);
+                    paraWriter.close();
+                    pairs.add(new Paired(paraFile.getAbsolutePath(), file.getAbsolutePath(), para));
+                }
             }
 
             // Pages Segmentation
             String[] pages = segmenter.getPages();
-            for (String page : pages) {
-                baseName = UUID.randomUUID().toString();
-                File pageFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                FileWriter pageWriter = new FileWriter(pageFile);
-                pageWriter.write(page);
-                pageWriter.close();
-                pairs.add(new Paired(pageFile.getAbsolutePath(), file.getAbsolutePath(), page));
+            if (pages.length > 0) {
+                for (String page : pages) {
+
+                    if (page.strip().isEmpty()) continue;
+                    if (page.length() < minLength) continue;
+
+                    baseName = UUID.randomUUID().toString();
+                    File pageFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
+                    FileWriter pageWriter = new FileWriter(pageFile);
+                    pageWriter.write(page);
+                    pageWriter.close();
+                    pairs.add(new Paired(pageFile.getAbsolutePath(), file.getAbsolutePath(), page));
+                }
             }
 
-            // Sentences Segmentation
-            String[] sentences = segmenter.getSentences();
-            for (String sentence : sentences) {
-                baseName = UUID.randomUUID().toString();
-                File sentenceFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                FileWriter sentenceWriter = new FileWriter(sentenceFile);
-                sentenceWriter.write(sentence);
-                sentenceWriter.close();
-                pairs.add(new Paired(sentenceFile.getAbsolutePath(), file.getAbsolutePath(), sentence));
-            }
+            // Sections Segmentation
+            Map<String, String> sections = segmenter.getSections();
+            if (sections.size() > 0) {
+                for (Map.Entry<String, String> entry : sections.entrySet()) {
+                    String header = entry.getKey();
+                    String body = entry.getValue();
+                    String hbText = header + "\n" + body;
+                    
+                    if (hbText.strip().isEmpty()) continue;
+                    if (hbText.length() < minLength) continue;
 
+                    baseName = UUID.randomUUID().toString();
+                    File sectionFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
+                    FileWriter sectionWriter = new FileWriter(sectionFile);
+                    sectionWriter.write(header + "\n" + body);
+                    sectionWriter.close();
+                    pairs.add(new Paired(sectionFile.getAbsolutePath(), file.getAbsolutePath(), hbText));
+                }
+            }
+            
             current++;
         }
+        printProgress(current, total);
         System.out.println("\nFinished processing files.\n");
 
         Criteria<String, float[]> criteria = Criteria.builder()
@@ -250,6 +263,7 @@ public class Main {
             total = pairs.size();
 
             for (Paired pair : pairs) {
+                printProgress(current, total);
                 float[] vector = embedder.predict(pair.text);
     
                 Document doc = new Document();
@@ -258,10 +272,13 @@ public class Main {
                 doc.add(new TextField("path", pair.path, Field.Store.YES));
                 doc.add(new TextField("basePath", pair.basePath, Field.Store.YES));
                 writer.addDocument(doc);
+
+                current++;
             }
             writer.commit();
             writer.close();
 
+            printProgress(current, total);
             System.out.println("\nFinished indexing documents.\n");
         }
 

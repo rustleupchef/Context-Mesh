@@ -9,15 +9,9 @@ import java.util.regex.Pattern;
 
 public class TextSegmenter {
     private final String content;
-    private final String[] lines;
 
     TextSegmenter(String content) {
         this.content = content;
-        this.lines = content.split("\\r?\\n");
-    }
-
-    public String[] getLines() {
-        return lines;
     }
 
     public String[] getParagraphs() {
@@ -25,10 +19,6 @@ public class TextSegmenter {
     }
 
     public String[] getPages() {
-        return content.split("(?<=[.!?])\\s+");
-    }
-
-    public String[] getSentences() {
         return content.split("(?<=[.!?])\\s+");
     }
 
