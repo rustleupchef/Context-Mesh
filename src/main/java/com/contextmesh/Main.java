@@ -7,10 +7,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
 import java.util.Scanner;
 import java.util.UUID;
 
@@ -72,6 +69,21 @@ public class Main {
                 || mimeType.equals("application/rtf");
     }
 
+    public static void printProgress(int current, int total) {
+        int percent = (current * 100) / total;
+        int barWidth = 20; // total characters in the bar
+        int completed = (current * barWidth) / total;
+
+        StringBuilder bar = new StringBuilder("[");
+        for (int i = 0; i < barWidth; i++) {
+            if (i < completed) bar.append("=");
+            else bar.append(" ");
+        }
+        bar.append("] " + percent + "%");
+        System.out.print("\r" + bar.toString());
+    }
+
+
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
             args = new String[3];
@@ -127,7 +139,11 @@ public class Main {
             process.waitFor();
         }
 
+        System.out.println("Processing files...");
+        int current = 0, total = contextFiles.length;
         for (File file : contextFiles) {
+            printProgress(current, total);
+
             String mimeType = tika.detect(file);
             if (!isTextBased(mimeType))
                 continue;
@@ -187,7 +203,10 @@ public class Main {
                 sentenceWriter.close();
                 pairs.add(new Paired(sentenceFile.getAbsolutePath(), file.getAbsolutePath(), sentence));
             }
+
+            current++;
         }
+        System.out.println("\nFinished processing files.\n");
 
         Criteria<String, float[]> criteria = Criteria.builder()
             .setTypes(String.class, float[].class)
@@ -226,6 +245,10 @@ public class Main {
             IndexWriter writer = new IndexWriter(directory, config);
     
     
+            System.out.println("\n\nIndexing documents...");
+            current = 0;
+            total = pairs.size();
+
             for (Paired pair : pairs) {
                 float[] vector = embedder.predict(pair.text);
     
@@ -238,6 +261,8 @@ public class Main {
             }
             writer.commit();
             writer.close();
+
+            System.out.println("\nFinished indexing documents.\n");
         }
 
         DirectoryReader reader = DirectoryReader.open(directory);
