@@ -70,7 +70,18 @@ public class Main {
                 || mimeType.equals("application/rtf");
     }
 
-    private static void printProgress(int current, int total) {
+    private static String milliSecondsToTime(long ms) {
+        long seconds = ms / 1000;
+        long minutes = seconds / 60;
+        long hours = minutes / 60;
+
+        seconds %= 60;
+        minutes %= 60;
+
+        return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+    }
+
+    private static void printProgress(int current, int total, long startTime) {
         int percent = (current * 100) / total;
         int barWidth = 20; // total characters in the bar
         int completed = (current * barWidth) / total;
@@ -81,7 +92,7 @@ public class Main {
             else bar.append(" ");
         }
         bar.append("] " + percent + "%");
-        System.out.print("\r" + bar.toString());
+        System.out.print("\r" + bar.toString() + "\t" + milliSecondsToTime(System.currentTimeMillis() - startTime));
     }
 
 
@@ -142,8 +153,9 @@ public class Main {
 
         System.out.println("Processing files...");
         int current = 0, total = contextFiles.length;
+        long startTime = System.currentTimeMillis();
         for (File file : contextFiles) {
-            printProgress(current, total);
+            printProgress(current, total, startTime);
 
             String mimeType = tika.detect(file);
             if (!isTextBased(mimeType))
@@ -218,7 +230,7 @@ public class Main {
             
             current++;
         }
-        printProgress(current, total);
+        printProgress(current, total, startTime);
         System.out.println("\nFinished processing files.\n");
 
         Criteria<String, float[]> criteria = Criteria.builder()
@@ -244,6 +256,7 @@ public class Main {
         bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
         String output2 = bufferedReader.readLine();
 
+        startTime = System.currentTimeMillis();
         if (output1 != null || output2 == null) {
             builder.command("git", "add", ".");
             process = builder.start();
@@ -263,7 +276,7 @@ public class Main {
             total = pairs.size();
 
             for (Paired pair : pairs) {
-                printProgress(current, total);
+                printProgress(current, total, startTime);
                 float[] vector = embedder.predict(pair.text);
     
                 Document doc = new Document();
@@ -278,8 +291,11 @@ public class Main {
             writer.commit();
             writer.close();
 
-            printProgress(current, total);
+            printProgress(current, total, startTime);
             System.out.println("\nFinished indexing documents.\n");
+        } else {
+            System.out.println("No changes detected. Skipping indexing.");
+            System.out.println(milliSecondsToTime(System.currentTimeMillis() - startTime) + "\n\n");
         }
 
         DirectoryReader reader = DirectoryReader.open(directory);
