@@ -36,6 +36,7 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.tika.Tika;
+import org.apache.tika.exception.TikaException;
 
 import ai.djl.inference.Predictor;
 import ai.djl.repository.zoo.Criteria;
@@ -60,6 +61,16 @@ class PromptPayload {
 
     PromptPayload(String prompt) {
         this.prompt = prompt;
+    }
+}
+
+class MessagePayload {
+    public String type;
+    public String content;
+
+    MessagePayload(String type, String content) {
+        this.type = type;
+        this.content = content;
     }
 }
 
@@ -377,6 +388,187 @@ public class Main {
             }
             exchange.close();
         });
+
+        server.createContext("/api/reload_context", exchange -> {
+            if ("POST".equals(exchange.getRequestMethod())) {
+                MessagePayload responsePayload = new MessagePayload("success", "Context reloaded successfully");
+
+                System.out.println("Processing files...");
+                int _current = 0, _total = contextFiles.length;
+                long _startTime = System.currentTimeMillis();
+                for (File file : contextFiles) {
+                    printProgress(_current, _total, _startTime);
+
+                    String mimeType = tika.detect(file);
+                    if (!isTextBased(mimeType))
+                        continue;
+
+                    String baseName = UUID.randomUUID().toString();
+
+                    String text = "";
+                    try {
+                        text = tika.parseToString(file).toLowerCase();
+                    } catch (TikaException e) {
+                        e.printStackTrace();
+                    }
+                    File outputFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
+                    FileWriter writer = new FileWriter(outputFile);
+                    writer.write(text);
+                    writer.close();
+
+                    pairs.add(new Paired(outputFile.getAbsolutePath(), file.getAbsolutePath(), text));
+
+                    TextSegmenter segmenter = new TextSegmenter(text);
+                    final int minLength = 200;
+
+                    // Paragraphs Segmentation
+                    String[] paragraphs = segmenter.getParagraphs();
+                    if (paragraphs.length > 0) {
+                        for (String para : paragraphs) {
+
+                            if (para.strip().isEmpty()) continue;
+                            if (para.length() < minLength) continue;
+
+                            baseName = UUID.randomUUID().toString();
+                            File paraFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
+                            FileWriter paraWriter = new FileWriter(paraFile);
+                            paraWriter.write(para);
+                            paraWriter.close();
+                            pairs.add(new Paired(paraFile.getAbsolutePath(), file.getAbsolutePath(), para));
+                        }
+                    }
+
+                    // Pages Segmentation
+                    String[] pages = segmenter.getPages();
+                    if (pages.length > 0) {
+                        for (String page : pages) {
+
+                            if (page.strip().isEmpty()) continue;
+                            if (page.length() < minLength) continue;
+
+                            baseName = UUID.randomUUID().toString();
+                            File pageFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
+                            FileWriter pageWriter = new FileWriter(pageFile);
+                            pageWriter.write(page);
+                            pageWriter.close();
+                            pairs.add(new Paired(pageFile.getAbsolutePath(), file.getAbsolutePath(), page));
+                        }
+                    }
+
+                    // Sections Segmentation
+                    Map<String, String> sections = segmenter.getSections();
+                    if (sections.size() > 0) {
+                        for (Map.Entry<String, String> entry : sections.entrySet()) {
+                            String header = entry.getKey();
+                            String body = entry.getValue();
+                            String hbText = header + "\n" + body;
+                            
+                            if (hbText.strip().isEmpty()) continue;
+                            if (hbText.length() < minLength) continue;
+
+                            baseName = UUID.randomUUID().toString();
+                            File sectionFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
+                            FileWriter sectionWriter = new FileWriter(sectionFile);
+                            sectionWriter.write(header + "\n" + body);
+                            sectionWriter.close();
+                            pairs.add(new Paired(sectionFile.getAbsolutePath(), file.getAbsolutePath(), hbText));
+                        }
+                    }
+                    
+                    _current++;
+                }
+                printProgress(_current, _total, _startTime);
+                System.out.println("\nFinished processing files.\n");
+
+                builder.command("git", "diff");
+                Process _process = builder.start();
+                try {
+                    _process.waitFor();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                BufferedReader  _bufferedReader = new BufferedReader(new InputStreamReader(_process.getInputStream()));
+                String _output1 = _bufferedReader.readLine();
+
+                builder.command("git", "log");
+                _process = builder.start();
+                try {
+                    _process.waitFor();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                _bufferedReader = new BufferedReader(new InputStreamReader(_process.getInputStream()));
+                String _output2 = _bufferedReader.readLine();
+
+                _startTime = System.currentTimeMillis();
+                if (_output1 != null || _output2 == null) {
+                    builder.command("git", "add", ".");
+                    _process = builder.start();
+                    try {
+                        _process.waitFor();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+
+                    builder.command("git", "commit", "-m", "\"change\"");
+                    _process = builder.start();
+                    try {
+                        _process.waitFor();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+
+                    StandardAnalyzer analyzer = new StandardAnalyzer();
+                    IndexWriterConfig config = new IndexWriterConfig(analyzer);
+                    IndexWriter writer = new IndexWriter(directory, config);
+            
+            
+                    System.out.println("\n\nIndexing documents...");
+                    _current = 0;
+                    _total = pairs.size();
+
+                    for (Paired pair : pairs) {
+                        printProgress(_current, _total, _startTime);
+                        float[] vector = new float[0];
+                        try {
+                            vector = embedder.predict(pair.text);
+                        } catch (TranslateException e) {
+                            e.printStackTrace();
+                        }
+            
+                        Document doc = new Document();
+                        doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
+                        doc.add(new TextField("content", pair.text, Field.Store.YES));
+                        doc.add(new TextField("path", pair.path, Field.Store.YES));
+                        doc.add(new TextField("basePath", pair.basePath, Field.Store.YES));
+                        writer.addDocument(doc);
+
+                        _current++;
+                    }
+                    writer.commit();
+                    writer.close();
+
+                    printProgress(_current, _total, _startTime);
+                    System.out.println("\nFinished indexing documents.\n");
+                } else {
+                    System.out.println("No changes detected. Skipping indexing.");
+                    System.out.println(milliSecondsToTime(System.currentTimeMillis() - _startTime) + "\n\n");
+                }
+
+                exchange.sendResponseHeaders(200, 0);
+                exchange.getResponseBody().write(
+                    new GsonBuilder()
+                        .setPrettyPrinting()
+                        .create()
+                        .toJson(responsePayload)
+                        .getBytes(StandardCharsets.UTF_8)
+                );
+            } else {
+                exchange.sendResponseHeaders(405, -1);
+            }
+            exchange.close();
+        });
+
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         server.start();
 
