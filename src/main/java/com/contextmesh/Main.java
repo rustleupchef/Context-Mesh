@@ -1,9 +1,5 @@
 package com.contextmesh;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.sun.net.httpserver.HttpServer;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileWriter;
@@ -37,6 +33,10 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.tika.Tika;
 import org.apache.tika.exception.TikaException;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.sun.net.httpserver.HttpServer;
 
 import ai.djl.inference.Predictor;
 import ai.djl.repository.zoo.Criteria;
@@ -166,6 +166,7 @@ public class Main {
 
         File dir = Path.of(output_path).resolve("input/").toFile();
         ProcessBuilder builder = new ProcessBuilder();
+        builder.redirectErrorStream(true);
         Process process;
         builder.directory(dir);
 
@@ -191,7 +192,7 @@ public class Main {
         long startTime = System.currentTimeMillis();
         for (File file : contextFiles) {
             printProgress(current, total, startTime);
-
+            
             String mimeType = tika.detect(file);
             if (!isTextBased(mimeType))
                 continue;
@@ -279,10 +280,11 @@ public class Main {
 
         Directory directory = getDirectory(output_path);
 
-        builder.command("git", "diff");
+        builder.command("git", "status");
         process = builder.start();
         process.waitFor();
         bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        bufferedReader.readLine();
         String output1 = bufferedReader.readLine();
 
         builder.command("git", "log");
@@ -292,7 +294,8 @@ public class Main {
         String output2 = bufferedReader.readLine();
 
         startTime = System.currentTimeMillis();
-        if (output1 != null || output2 == null) {
+        if (!output1.equals("nothing to commit, working tree clean") || output2.equals("fatal: your current branch 'master' does not have any commits yet")) {
+
             builder.command("git", "add", ".");
             process = builder.start();
             process.waitFor();
@@ -393,10 +396,12 @@ public class Main {
             if ("POST".equals(exchange.getRequestMethod())) {
                 MessagePayload responsePayload = new MessagePayload("success", "Context reloaded successfully");
 
+                File[] _contextFiles = inputDir.listFiles();
+
                 System.out.println("Processing files...");
-                int _current = 0, _total = contextFiles.length;
+                int _current = 0, _total = _contextFiles.length;
                 long _startTime = System.currentTimeMillis();
-                for (File file : contextFiles) {
+                for (File file : _contextFiles) {
                     printProgress(_current, _total, _startTime);
 
                     String mimeType = tika.detect(file);
@@ -480,7 +485,8 @@ public class Main {
                 printProgress(_current, _total, _startTime);
                 System.out.println("\nFinished processing files.\n");
 
-                builder.command("git", "diff");
+
+                builder.command("git", "status");
                 Process _process = builder.start();
                 try {
                     _process.waitFor();
@@ -488,20 +494,12 @@ public class Main {
                     e.printStackTrace();
                 }
                 BufferedReader  _bufferedReader = new BufferedReader(new InputStreamReader(_process.getInputStream()));
+                _bufferedReader.readLine();
                 String _output1 = _bufferedReader.readLine();
 
-                builder.command("git", "log");
-                _process = builder.start();
-                try {
-                    _process.waitFor();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                _bufferedReader = new BufferedReader(new InputStreamReader(_process.getInputStream()));
-                String _output2 = _bufferedReader.readLine();
-
                 _startTime = System.currentTimeMillis();
-                if (_output1 != null || _output2 == null) {
+                if (!_output1.equals("nothing to commit, working tree clean")) {
+
                     builder.command("git", "add", ".");
                     _process = builder.start();
                     try {
