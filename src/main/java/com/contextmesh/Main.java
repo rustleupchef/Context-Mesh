@@ -165,27 +165,7 @@ public class Main {
         ArrayList<Paired> pairs = new ArrayList<>();
 
         File dir = Path.of(output_path).resolve("input/").toFile();
-        ProcessBuilder builder = new ProcessBuilder();
-        builder.redirectErrorStream(true);
-        Process process;
-        builder.directory(dir);
-
-        if (dir.mkdirs()) {
-            builder.command("git", "init");
-            process = builder.start();
-            process.waitFor();
-        }
-
-        builder.command("bash", "-c", "ls -a | grep .git");
-        process = builder.start();
-        process.waitFor();
-
-        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-        if (bufferedReader.readLine() == null) {
-            builder.command("git", "init");
-            process = builder.start();
-            process.waitFor();
-        }
+        dir.mkdirs();
 
         System.out.println("Processing files...");
         int current = 0, total = contextFiles.length;
@@ -280,61 +260,34 @@ public class Main {
 
         Directory directory = getDirectory(output_path);
 
-        builder.command("git", "status");
-        process = builder.start();
-        process.waitFor();
-        bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-        bufferedReader.readLine();
-        String output1 = bufferedReader.readLine();
-
-        builder.command("git", "log");
-        process = builder.start();
-        process.waitFor();
-        bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-        String output2 = bufferedReader.readLine();
-
         startTime = System.currentTimeMillis();
-        if (!output1.equals("nothing to commit, working tree clean") || output2.equals("fatal: your current branch 'master' does not have any commits yet")) {
+        StandardAnalyzer analyzer = new StandardAnalyzer();
+        IndexWriterConfig config = new IndexWriterConfig(analyzer);
+        IndexWriter writer = new IndexWriter(directory, config);
 
-            builder.command("git", "add", ".");
-            process = builder.start();
-            process.waitFor();
 
-            builder.command("git", "commit", "-m", "\"change\"");
-            process = builder.start();
-            process.waitFor();
+        System.out.println("\n\nIndexing documents...");
+        current = 0;
+        total = pairs.size();
 
-            StandardAnalyzer analyzer = new StandardAnalyzer();
-            IndexWriterConfig config = new IndexWriterConfig(analyzer);
-            IndexWriter writer = new IndexWriter(directory, config);
-    
-    
-            System.out.println("\n\nIndexing documents...");
-            current = 0;
-            total = pairs.size();
-
-            for (Paired pair : pairs) {
-                printProgress(current, total, startTime);
-                float[] vector = embedder.predict(pair.text);
-    
-                Document doc = new Document();
-                doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
-                doc.add(new TextField("content", pair.text, Field.Store.YES));
-                doc.add(new TextField("path", pair.path, Field.Store.YES));
-                doc.add(new TextField("basePath", pair.basePath, Field.Store.YES));
-                writer.addDocument(doc);
-
-                current++;
-            }
-            writer.commit();
-            writer.close();
-
+        for (Paired pair : pairs) {
             printProgress(current, total, startTime);
-            System.out.println("\nFinished indexing documents.\n");
-        } else {
-            System.out.println("No changes detected. Skipping indexing.");
-            System.out.println(milliSecondsToTime(System.currentTimeMillis() - startTime) + "\n\n");
+            float[] vector = embedder.predict(pair.text);
+
+            Document doc = new Document();
+            doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
+            doc.add(new TextField("content", pair.text, Field.Store.YES));
+            doc.add(new TextField("path", pair.path, Field.Store.YES));
+            doc.add(new TextField("basePath", pair.basePath, Field.Store.YES));
+            writer.addDocument(doc);
+
+            current++;
         }
+        writer.commit();
+        writer.close();
+
+        printProgress(current, total, startTime);
+        System.out.println("\nFinished indexing documents.\n");
 
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
 
@@ -417,9 +370,9 @@ public class Main {
                         e.printStackTrace();
                     }
                     File outputFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                    FileWriter writer = new FileWriter(outputFile);
-                    writer.write(text);
-                    writer.close();
+                    FileWriter _writer = new FileWriter(outputFile);
+                    _writer.write(text);
+                    _writer.close();
 
                     pairs.add(new Paired(outputFile.getAbsolutePath(), file.getAbsolutePath(), text));
 
@@ -486,72 +439,38 @@ public class Main {
                 System.out.println("\nFinished processing files.\n");
 
 
-                builder.command("git", "status");
-                Process _process = builder.start();
-                try {
-                    _process.waitFor();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                BufferedReader  _bufferedReader = new BufferedReader(new InputStreamReader(_process.getInputStream()));
-                _bufferedReader.readLine();
-                String _output1 = _bufferedReader.readLine();
-
                 _startTime = System.currentTimeMillis();
-                if (!_output1.equals("nothing to commit, working tree clean")) {
+                StandardAnalyzer _analyzer = new StandardAnalyzer();
+                IndexWriterConfig _config = new IndexWriterConfig(_analyzer);
+                IndexWriter _writer = new IndexWriter(directory, _config);
 
-                    builder.command("git", "add", ".");
-                    _process = builder.start();
-                    try {
-                        _process.waitFor();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
+                System.out.println("\n\nIndexing documents...");
+                _current = 0;
+                _total = pairs.size();
 
-                    builder.command("git", "commit", "-m", "\"change\"");
-                    _process = builder.start();
-                    try {
-                        _process.waitFor();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-
-                    StandardAnalyzer analyzer = new StandardAnalyzer();
-                    IndexWriterConfig config = new IndexWriterConfig(analyzer);
-                    IndexWriter writer = new IndexWriter(directory, config);
-            
-            
-                    System.out.println("\n\nIndexing documents...");
-                    _current = 0;
-                    _total = pairs.size();
-
-                    for (Paired pair : pairs) {
-                        printProgress(_current, _total, _startTime);
-                        float[] vector = new float[0];
-                        try {
-                            vector = embedder.predict(pair.text);
-                        } catch (TranslateException e) {
-                            e.printStackTrace();
-                        }
-            
-                        Document doc = new Document();
-                        doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
-                        doc.add(new TextField("content", pair.text, Field.Store.YES));
-                        doc.add(new TextField("path", pair.path, Field.Store.YES));
-                        doc.add(new TextField("basePath", pair.basePath, Field.Store.YES));
-                        writer.addDocument(doc);
-
-                        _current++;
-                    }
-                    writer.commit();
-                    writer.close();
-
+                for (Paired pair : pairs) {
                     printProgress(_current, _total, _startTime);
-                    System.out.println("\nFinished indexing documents.\n");
-                } else {
-                    System.out.println("No changes detected. Skipping indexing.");
-                    System.out.println(milliSecondsToTime(System.currentTimeMillis() - _startTime) + "\n\n");
+                    float[] vector = new float[0];
+                    try {
+                        vector = embedder.predict(pair.text);
+                    } catch (TranslateException e) {
+                        e.printStackTrace();
+                    }
+        
+                    Document doc = new Document();
+                    doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
+                    doc.add(new TextField("content", pair.text, Field.Store.YES));
+                    doc.add(new TextField("path", pair.path, Field.Store.YES));
+                    doc.add(new TextField("basePath", pair.basePath, Field.Store.YES));
+                    _writer.addDocument(doc);
+
+                    _current++;
                 }
+                _writer.commit();
+                _writer.close();
+
+                printProgress(_current, _total, _startTime);
+                System.out.println("\nFinished indexing documents.\n");
 
                 exchange.sendResponseHeaders(200, 0);
                 exchange.getResponseBody().write(
