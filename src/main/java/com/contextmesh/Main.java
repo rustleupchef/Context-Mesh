@@ -1,6 +1,7 @@
 package com.contextmesh;
 
 import java.io.File;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -81,6 +82,18 @@ class DocumentPayload {
         this.path = path;
         this.basePath = basePath;
         this.score = score;
+    }
+}
+
+class SetupConfig {
+    public String inputPath;
+    public String outputPath;
+    public boolean reloadContext;
+
+    SetupConfig(String inputPath, String outputPath, boolean reloadContext) {
+        this.inputPath = inputPath;
+        this.outputPath = outputPath;
+        this.reloadContext = reloadContext;
     }
 }
 
@@ -262,22 +275,18 @@ public class Main {
 
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 2) {
-            args = new String[2];
-            System.out.println("Schema; java -jar [jar_name] [input_path] [output_path] [query]");
+        Gson gson = new Gson();
+        SetupConfig config = null;
 
-            Scanner scanner = new Scanner(System.in);
-
-            System.out.print("Input Path: ");
-            args[0] = scanner.nextLine();
-
-            System.out.print("Output Path: ");
-            args[1] = scanner.nextLine();
-
-            scanner.close();
+        try (FileReader reader = new FileReader("config.json")) {
+            config = gson.fromJson(reader, SetupConfig.class);
+        } catch (Exception e) {
+            System.out.println("Error reading config.json: " + e.getMessage());
+            System.exit(1);
         }
 
-        final String input_path = args[0], output_path = args[1];
+        final String input_path = config.inputPath;
+        final String output_path = config.outputPath;
         final File inputDir = new File(input_path), outputDir = new File(output_path);
 
         if (!inputDir.isDirectory() || !outputDir.isDirectory()) {
@@ -304,7 +313,9 @@ public class Main {
 
         Directory directory = getDirectory(output_path);
 
-        loadContext(contextFiles, output_path, tika, pairs, embedder, directory);
+
+        if (config.reloadContext)
+            loadContext(contextFiles, output_path, tika, pairs, embedder, directory);
 
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
 
