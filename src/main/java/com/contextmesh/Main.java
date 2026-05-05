@@ -144,6 +144,46 @@ public class Main {
         }
     }
 
+    private static ArrayList<DocumentPayload> prompt(
+        Directory directory, 
+        Predictor<String, float[]> embedder, 
+        String text, 
+        int size
+    ) throws IOException {
+        DirectoryReader reader = DirectoryReader.open(directory);
+        IndexSearcher searcher = new IndexSearcher(reader);
+
+        KnnFloatVectorQuery query = null;
+        try {
+            query = new KnnFloatVectorQuery("embedding", embedder.predict(text), 10);
+        } catch (TranslateException e) {
+            e.printStackTrace();
+        }
+        TopDocs results = searcher.search(query, size);
+        StoredFields storedFields = searcher.storedFields();
+
+        ArrayList<DocumentPayload> responsePayload = new ArrayList<>();
+        HashSet<String> uniquePaths = new HashSet<>();
+        for (ScoreDoc doc : results.scoreDocs) {
+            Document document = storedFields.document(doc.doc);
+            String path = document.get("basePath");
+
+            if (!uniquePaths.contains(path)) {
+                uniquePaths.add(path);
+            }
+
+            DocumentPayload docPayload = new DocumentPayload(
+                document.get("path"),
+                document.get("basePath"),
+                doc.score
+            );
+            responsePayload.add(docPayload);
+        }
+
+        reader.close();
+        return responsePayload;
+    }
+
     private static void loadContext(
         File[] contextFiles,
         String output_path, 
@@ -329,38 +369,9 @@ public class Main {
                     StandardCharsets.UTF_8
                 );
 
-                DirectoryReader reader = DirectoryReader.open(directory);
-                IndexSearcher searcher = new IndexSearcher(reader);
-
-                PromptPayload payload = new Gson().fromJson(requestBody, PromptPayload.class);
-                KnnFloatVectorQuery query = null;
-                try {
-                    query = new KnnFloatVectorQuery("embedding", embedder.predict(payload.prompt), 10);
-                } catch (TranslateException e) {
-                    e.printStackTrace();
-                }
-                TopDocs results = searcher.search(query, pairs.size());
-                StoredFields storedFields = searcher.storedFields();
-
-                ArrayList<DocumentPayload> responsePayload = new ArrayList<>();
-                HashSet<String> uniquePaths = new HashSet<>();
-                for (ScoreDoc doc : results.scoreDocs) {
-                    Document document = storedFields.document(doc.doc);
-                    String path = document.get("basePath");
-
-                    if (!uniquePaths.contains(path)) {
-                        uniquePaths.add(path);
-                    }
-
-                    DocumentPayload docPayload = new DocumentPayload(
-                        document.get("path"),
-                        document.get("basePath"),
-                        doc.score
-                    );
-                    responsePayload.add(docPayload);
-                }
-
-                reader.close();
+                String text = new Gson().fromJson(requestBody, PromptPayload.class).prompt;
+                ArrayList<DocumentPayload> responsePayload = prompt(directory, embedder, text, 10);
+                
                 exchange.sendResponseHeaders(200, 0);
                 exchange.getResponseBody().write(
                     new GsonBuilder()
