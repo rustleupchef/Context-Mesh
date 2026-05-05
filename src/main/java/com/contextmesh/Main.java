@@ -132,56 +132,48 @@ public class Main {
         System.out.print("\r" + bar.toString() + "\t" + milliSecondsToTime(System.currentTimeMillis() - startTime));
     }
 
-
-    public static void main(String[] args) throws Exception {
-        if (args.length < 2) {
-            args = new String[2];
-            System.out.println("Schema; java -jar [jar_name] [input_path] [output_path] [query]");
-
-            Scanner scanner = new Scanner(System.in);
-
-            System.out.print("Input Path: ");
-            args[0] = scanner.nextLine();
-
-            System.out.print("Output Path: ");
-            args[1] = scanner.nextLine();
-
-            scanner.close();
+    private static void clearDirectory(File directory) {
+        File[] files = directory.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    clearDirectory(file);
+                }
+                file.delete();
+            }
         }
+    }
 
-        final String input_path = args[0], output_path = args[1];
-        final File inputDir = new File(input_path), outputDir = new File(output_path);
-
-        if (!inputDir.isDirectory() || !outputDir.isDirectory()) {
-            System.out.println("Please enter only directories");
-            System.exit(1);
-        }
-
-        File[] contextFiles = inputDir.listFiles();
-        Tika tika = new Tika();
-
-        ArrayList<Paired> pairs = new ArrayList<>();
-
-        File dir = Path.of(output_path).resolve("input/").toFile();
-        dir.mkdirs();
-
+    private static void loadContext(
+        File[] contextFiles,
+        String output_path, 
+        Tika tika, 
+        ArrayList<Paired> pairs, 
+        Predictor<String, float[]> embedder,
+        Directory directory
+    ) throws IOException {
         System.out.println("Processing files...");
-        int current = 0, total = contextFiles.length;
-        long startTime = System.currentTimeMillis();
+        int _current = 0, _total = contextFiles.length;
+        long _startTime = System.currentTimeMillis();
         for (File file : contextFiles) {
-            printProgress(current, total, startTime);
-            
+            printProgress(_current, _total, _startTime);
+
             String mimeType = tika.detect(file);
             if (!isTextBased(mimeType))
                 continue;
 
             String baseName = UUID.randomUUID().toString();
 
-            String text = tika.parseToString(file).toLowerCase();
+            String text = "";
+            try {
+                text = tika.parseToString(file).toLowerCase();
+            } catch (TikaException e) {
+                e.printStackTrace();
+            }
             File outputFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-            FileWriter writer = new FileWriter(outputFile);
-            writer.write(text);
-            writer.close();
+            FileWriter _writer = new FileWriter(outputFile);
+            _writer.write(text);
+            _writer.close();
 
             pairs.add(new Paired(outputFile.getAbsolutePath(), file.getAbsolutePath(), text));
 
@@ -242,10 +234,78 @@ public class Main {
                 }
             }
             
-            current++;
+            _current++;
         }
-        printProgress(current, total, startTime);
+        printProgress(_current, _total, _startTime);
         System.out.println("\nFinished processing files.\n");
+
+
+        _startTime = System.currentTimeMillis();
+        StandardAnalyzer _analyzer = new StandardAnalyzer();
+        IndexWriterConfig _config = new IndexWriterConfig(_analyzer);
+        IndexWriter _writer = new IndexWriter(directory, _config);
+
+        System.out.println("\n\nIndexing documents...");
+        _current = 0;
+        _total = pairs.size();
+
+        for (Paired pair : pairs) {
+            printProgress(_current, _total, _startTime);
+            float[] vector = new float[0];
+            try {
+                vector = embedder.predict(pair.text);
+            } catch (TranslateException e) {
+                e.printStackTrace();
+            }
+
+            Document doc = new Document();
+            doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
+            doc.add(new TextField("content", pair.text, Field.Store.YES));
+            doc.add(new TextField("path", pair.path, Field.Store.YES));
+            doc.add(new TextField("basePath", pair.basePath, Field.Store.YES));
+            _writer.addDocument(doc);
+
+            _current++;
+        }
+        _writer.commit();
+        _writer.close();
+
+        printProgress(_current, _total, _startTime);
+        System.out.println("\nFinished indexing documents.\n");
+    }
+
+
+    public static void main(String[] args) throws Exception {
+        if (args.length < 2) {
+            args = new String[2];
+            System.out.println("Schema; java -jar [jar_name] [input_path] [output_path] [query]");
+
+            Scanner scanner = new Scanner(System.in);
+
+            System.out.print("Input Path: ");
+            args[0] = scanner.nextLine();
+
+            System.out.print("Output Path: ");
+            args[1] = scanner.nextLine();
+
+            scanner.close();
+        }
+
+        final String input_path = args[0], output_path = args[1];
+        final File inputDir = new File(input_path), outputDir = new File(output_path);
+
+        if (!inputDir.isDirectory() || !outputDir.isDirectory()) {
+            System.out.println("Please enter only directories");
+            System.exit(1);
+        }
+
+        File[] contextFiles = inputDir.listFiles();
+        Tika tika = new Tika();
+
+        ArrayList<Paired> pairs = new ArrayList<>();
+
+        File dir = Path.of(output_path).resolve("input/").toFile();
+        dir.mkdirs();
 
         Criteria<String, float[]> criteria = Criteria.builder()
             .setTypes(String.class, float[].class)
@@ -258,34 +318,7 @@ public class Main {
 
         Directory directory = getDirectory(output_path);
 
-        startTime = System.currentTimeMillis();
-        StandardAnalyzer analyzer = new StandardAnalyzer();
-        IndexWriterConfig config = new IndexWriterConfig(analyzer);
-        IndexWriter writer = new IndexWriter(directory, config);
-
-
-        System.out.println("\n\nIndexing documents...");
-        current = 0;
-        total = pairs.size();
-
-        for (Paired pair : pairs) {
-            printProgress(current, total, startTime);
-            float[] vector = embedder.predict(pair.text);
-
-            Document doc = new Document();
-            doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
-            doc.add(new TextField("content", pair.text, Field.Store.YES));
-            doc.add(new TextField("path", pair.path, Field.Store.YES));
-            doc.add(new TextField("basePath", pair.basePath, Field.Store.YES));
-            writer.addDocument(doc);
-
-            current++;
-        }
-        writer.commit();
-        writer.close();
-
-        printProgress(current, total, startTime);
-        System.out.println("\nFinished indexing documents.\n");
+        loadContext(contextFiles, output_path, tika, pairs, embedder, directory);
 
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
 
@@ -346,129 +379,8 @@ public class Main {
         server.createContext("/api/reload_context", exchange -> {
             if ("POST".equals(exchange.getRequestMethod())) {
                 MessagePayload responsePayload = new MessagePayload("success", "Context reloaded successfully");
-
-                File[] _contextFiles = inputDir.listFiles();
-
-                System.out.println("Processing files...");
-                int _current = 0, _total = _contextFiles.length;
-                long _startTime = System.currentTimeMillis();
-                for (File file : _contextFiles) {
-                    printProgress(_current, _total, _startTime);
-
-                    String mimeType = tika.detect(file);
-                    if (!isTextBased(mimeType))
-                        continue;
-
-                    String baseName = UUID.randomUUID().toString();
-
-                    String text = "";
-                    try {
-                        text = tika.parseToString(file).toLowerCase();
-                    } catch (TikaException e) {
-                        e.printStackTrace();
-                    }
-                    File outputFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                    FileWriter _writer = new FileWriter(outputFile);
-                    _writer.write(text);
-                    _writer.close();
-
-                    pairs.add(new Paired(outputFile.getAbsolutePath(), file.getAbsolutePath(), text));
-
-                    TextSegmenter segmenter = new TextSegmenter(text);
-                    final int minLength = 200;
-
-                    // Paragraphs Segmentation
-                    String[] paragraphs = segmenter.getParagraphs();
-                    if (paragraphs.length > 0) {
-                        for (String para : paragraphs) {
-
-                            if (para.strip().isEmpty()) continue;
-                            if (para.length() < minLength) continue;
-
-                            baseName = UUID.randomUUID().toString();
-                            File paraFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                            FileWriter paraWriter = new FileWriter(paraFile);
-                            paraWriter.write(para);
-                            paraWriter.close();
-                            pairs.add(new Paired(paraFile.getAbsolutePath(), file.getAbsolutePath(), para));
-                        }
-                    }
-
-                    // Pages Segmentation
-                    String[] pages = segmenter.getPages();
-                    if (pages.length > 0) {
-                        for (String page : pages) {
-
-                            if (page.strip().isEmpty()) continue;
-                            if (page.length() < minLength) continue;
-
-                            baseName = UUID.randomUUID().toString();
-                            File pageFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                            FileWriter pageWriter = new FileWriter(pageFile);
-                            pageWriter.write(page);
-                            pageWriter.close();
-                            pairs.add(new Paired(pageFile.getAbsolutePath(), file.getAbsolutePath(), page));
-                        }
-                    }
-
-                    // Sections Segmentation
-                    Map<String, String> sections = segmenter.getSections();
-                    if (sections.size() > 0) {
-                        for (Map.Entry<String, String> entry : sections.entrySet()) {
-                            String header = entry.getKey();
-                            String body = entry.getValue();
-                            String hbText = header + "\n" + body;
-                            
-                            if (hbText.strip().isEmpty()) continue;
-                            if (hbText.length() < minLength) continue;
-
-                            baseName = UUID.randomUUID().toString();
-                            File sectionFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                            FileWriter sectionWriter = new FileWriter(sectionFile);
-                            sectionWriter.write(header + "\n" + body);
-                            sectionWriter.close();
-                            pairs.add(new Paired(sectionFile.getAbsolutePath(), file.getAbsolutePath(), hbText));
-                        }
-                    }
-                    
-                    _current++;
-                }
-                printProgress(_current, _total, _startTime);
-                System.out.println("\nFinished processing files.\n");
-
-
-                _startTime = System.currentTimeMillis();
-                StandardAnalyzer _analyzer = new StandardAnalyzer();
-                IndexWriterConfig _config = new IndexWriterConfig(_analyzer);
-                IndexWriter _writer = new IndexWriter(directory, _config);
-
-                System.out.println("\n\nIndexing documents...");
-                _current = 0;
-                _total = pairs.size();
-
-                for (Paired pair : pairs) {
-                    printProgress(_current, _total, _startTime);
-                    float[] vector = new float[0];
-                    try {
-                        vector = embedder.predict(pair.text);
-                    } catch (TranslateException e) {
-                        e.printStackTrace();
-                    }
-        
-                    Document doc = new Document();
-                    doc.add(new KnnFloatVectorField("embedding", vector, VectorSimilarityFunction.COSINE));
-                    doc.add(new TextField("content", pair.text, Field.Store.YES));
-                    doc.add(new TextField("path", pair.path, Field.Store.YES));
-                    doc.add(new TextField("basePath", pair.basePath, Field.Store.YES));
-                    _writer.addDocument(doc);
-
-                    _current++;
-                }
-                _writer.commit();
-                _writer.close();
-
-                printProgress(_current, _total, _startTime);
-                System.out.println("\nFinished indexing documents.\n");
+                pairs.clear();
+                loadContext(inputDir.listFiles(), output_path, tika, pairs, embedder, directory);
 
                 exchange.sendResponseHeaders(200, 0);
                 exchange.getResponseBody().write(
