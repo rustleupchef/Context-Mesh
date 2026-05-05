@@ -192,6 +192,9 @@ public class Main {
         Predictor<String, float[]> embedder,
         Directory directory
     ) throws IOException {
+
+        clearDirectory(Path.of(output_path).resolve("input").toFile());
+
         System.out.println("Processing files...");
         int _current = 0, _total = contextFiles.length;
         long _startTime = System.currentTimeMillis();
@@ -216,7 +219,7 @@ public class Main {
             _writer.close();
 
             pairs.add(new Paired(outputFile.getAbsolutePath(), file.getAbsolutePath(), text));
-            
+
             _current++;
         }
         printProgress(_current, _total, _startTime);
