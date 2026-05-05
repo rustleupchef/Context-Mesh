@@ -41,60 +41,6 @@ import ai.djl.repository.zoo.ModelZoo;
 import ai.djl.repository.zoo.ZooModel;
 import ai.djl.translate.TranslateException;
 
-class Paired {
-    public String path;
-    public String basePath;
-    public String text;
-
-    Paired(String path, String basePath, String text) {
-        this.path = path;
-        this.basePath = basePath;
-        this.text = text;
-    }
-}
-
-class PromptPayload {
-    public String prompt;
-
-    PromptPayload(String prompt) {
-        this.prompt = prompt;
-    }
-}
-
-class MessagePayload {
-    public String type;
-    public String content;
-
-    MessagePayload(String type, String content) {
-        this.type = type;
-        this.content = content;
-    }
-}
-
-class DocumentPayload {
-    public String path;
-    public String basePath;
-    public float score;
-
-    DocumentPayload(String path, String basePath, float score) {
-        this.path = path;
-        this.basePath = basePath;
-        this.score = score;
-    }
-}
-
-class SetupConfig {
-    public String inputPath;
-    public String outputPath;
-    public boolean reloadContext;
-
-    SetupConfig(String inputPath, String outputPath, boolean reloadContext) {
-        this.inputPath = inputPath;
-        this.outputPath = outputPath;
-        this.reloadContext = reloadContext;
-    }
-}
-
 public class Main {
 
     private static Directory getDirectory(String outputPath) throws IOException {
