@@ -216,63 +216,6 @@ public class Main {
             _writer.close();
 
             pairs.add(new Paired(outputFile.getAbsolutePath(), file.getAbsolutePath(), text));
-
-            TextSegmenter segmenter = new TextSegmenter(text);
-            final int minLength = 200;
-
-            // Paragraphs Segmentation
-            String[] paragraphs = segmenter.getParagraphs();
-            if (paragraphs.length > 0) {
-                for (String para : paragraphs) {
-
-                    if (para.strip().isEmpty()) continue;
-                    if (para.length() < minLength) continue;
-
-                    baseName = UUID.randomUUID().toString();
-                    File paraFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                    FileWriter paraWriter = new FileWriter(paraFile);
-                    paraWriter.write(para);
-                    paraWriter.close();
-                    pairs.add(new Paired(paraFile.getAbsolutePath(), file.getAbsolutePath(), para));
-                }
-            }
-
-            // Pages Segmentation
-            String[] pages = segmenter.getPages();
-            if (pages.length > 0) {
-                for (String page : pages) {
-
-                    if (page.strip().isEmpty()) continue;
-                    if (page.length() < minLength) continue;
-
-                    baseName = UUID.randomUUID().toString();
-                    File pageFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                    FileWriter pageWriter = new FileWriter(pageFile);
-                    pageWriter.write(page);
-                    pageWriter.close();
-                    pairs.add(new Paired(pageFile.getAbsolutePath(), file.getAbsolutePath(), page));
-                }
-            }
-
-            // Sections Segmentation
-            Map<String, String> sections = segmenter.getSections();
-            if (sections.size() > 0) {
-                for (Map.Entry<String, String> entry : sections.entrySet()) {
-                    String header = entry.getKey();
-                    String body = entry.getValue();
-                    String hbText = header + "\n" + body;
-                    
-                    if (hbText.strip().isEmpty()) continue;
-                    if (hbText.length() < minLength) continue;
-
-                    baseName = UUID.randomUUID().toString();
-                    File sectionFile = Path.of(output_path).resolve("input").resolve(baseName + ".txt").toFile();
-                    FileWriter sectionWriter = new FileWriter(sectionFile);
-                    sectionWriter.write(header + "\n" + body);
-                    sectionWriter.close();
-                    pairs.add(new Paired(sectionFile.getAbsolutePath(), file.getAbsolutePath(), hbText));
-                }
-            }
             
             _current++;
         }
