@@ -337,7 +337,7 @@ public class Main {
                     }
 
                     loadContext(contextFiles, tempDir.getAbsolutePath(), tika, pairs, embedder, tempDirectory, depthSearch);
-                    responsePayload = prompt(tempDirectory, embedder, text, 10);
+                    responsePayload.addAll(prompt(tempDirectory, embedder, text, 10));
                 }
                 
                 exchange.sendResponseHeaders(200, 0);
