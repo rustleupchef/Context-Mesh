@@ -235,6 +235,7 @@ public class Main {
         StandardAnalyzer _analyzer = new StandardAnalyzer();
         IndexWriterConfig _config = new IndexWriterConfig(_analyzer);
         IndexWriter _writer = new IndexWriter(directory, _config);
+        _writer.deleteAll();
 
         System.out.println("\n\nIndexing documents...");
         _current = 0;
