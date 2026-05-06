@@ -77,7 +77,7 @@ public class Main {
 
     private static void printProgress(int current, int total, long startTime) {
         int percent = (current * 100) / total;
-        int barWidth = 20; // total characters in the bar
+        int barWidth = 100;
         int completed = (current * barWidth) / total;
 
         StringBuilder bar = new StringBuilder("[");
