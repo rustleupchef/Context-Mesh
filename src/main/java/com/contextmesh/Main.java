@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 
@@ -203,6 +204,17 @@ public class Main {
                 segmentWriter.close();
 
                 pairs.add(new Paired(segmentFile.getAbsolutePath(), file.getAbsolutePath(), pages[i]));
+            }
+
+            Map<String, String> sections = segmenter.getSections();
+            for (Map.Entry<String, String> entry : sections.entrySet()) {
+                String segmentBaseName = UUID.randomUUID().toString();
+                File segmentFile = Path.of(output_path).resolve("input").resolve(segmentBaseName + ".txt").toFile();
+                FileWriter segmentWriter = new FileWriter(segmentFile);
+                segmentWriter.write(entry.getValue());
+                segmentWriter.close();
+
+                pairs.add(new Paired(segmentFile.getAbsolutePath(), file.getAbsolutePath(), entry.getValue()));
             }
 
         }
