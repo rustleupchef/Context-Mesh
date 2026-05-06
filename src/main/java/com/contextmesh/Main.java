@@ -151,7 +151,6 @@ public class Main {
         Directory directory,
         boolean depthSearch
     ) throws IOException {
-
         clearDirectory(Path.of(output_path).resolve("input").toFile());
 
         System.out.println("Processing files...");
@@ -186,6 +185,9 @@ public class Main {
 
             String[] paragraphs = segmenter.getParagraphs();
             for (int i = 0; i < paragraphs.length; i++) {
+                if (paragraphs[i].isBlank() || paragraphs[i].length() < 200)
+                    continue;
+
                 String segmentBaseName = UUID.randomUUID().toString();
                 File segmentFile = Path.of(output_path).resolve("input").resolve(segmentBaseName + ".txt").toFile();
                 FileWriter segmentWriter = new FileWriter(segmentFile);
@@ -197,6 +199,9 @@ public class Main {
 
             String[] pages = segmenter.getPages();
             for (int i = 0; i < pages.length; i++) {
+                if (pages[i].isBlank() || pages[i].length() < 200)
+                    continue;
+
                 String segmentBaseName = UUID.randomUUID().toString();
                 File segmentFile = Path.of(output_path).resolve("input").resolve(segmentBaseName + ".txt").toFile();
                 FileWriter segmentWriter = new FileWriter(segmentFile);
@@ -208,6 +213,10 @@ public class Main {
 
             Map<String, String> sections = segmenter.getSections();
             for (Map.Entry<String, String> entry : sections.entrySet()) {
+
+                if (entry.getValue().isBlank() || entry.getValue().length() < 200)
+                    continue;
+
                 String segmentBaseName = UUID.randomUUID().toString();
                 File segmentFile = Path.of(output_path).resolve("input").resolve(segmentBaseName + ".txt").toFile();
                 FileWriter segmentWriter = new FileWriter(segmentFile);
@@ -313,31 +322,33 @@ public class Main {
                 String text = new Gson().fromJson(requestBody, PromptPayload.class).prompt;
                 ArrayList<DocumentPayload> responsePayload = prompt(directory, embedder, text, 10);
 
-                if (depthSearch) {
-                    ArrayList<Paired> depthPairs = new ArrayList<>();
-                    for (DocumentPayload docPayload : responsePayload) {
-                        for (Paired pair : pairs) {
-                            if (pair.basePath.equals(docPayload.basePath)) {
-                                depthPairs.add(pair);
-                                break;
-                            }
+                try {
+                    if (depthSearch) {
+                        ArrayList<Paired> depthPairs = new ArrayList<>();
+                        for (DocumentPayload docPayload : responsePayload) {
+                            depthPairs.add(new Paired(docPayload.basePath, docPayload.basePath, new String()));
                         }
+    
+                        File tempDir = Path.of(output_path).resolve("temp/").toFile();
+                        tempDir.mkdirs();
+                        clearDirectory(tempDir);
+
+                        File tempInputDir = Path.of(tempDir.getAbsolutePath()).resolve("input/").toFile();
+                        tempInputDir.mkdirs();
+    
+                        Directory tempDirectory = getDirectory(tempDir.getAbsolutePath());
+    
+                        File[] tempContextFiles = new File[depthPairs.size()];
+                        for (int i = 0; i < depthPairs.size(); i++) {
+                            Paired pair = depthPairs.get(i);
+                            tempContextFiles[i] = new File(pair.basePath);
+                        }
+    
+                        loadContext(tempContextFiles, tempDir.getAbsolutePath(), tika, depthPairs, embedder, tempDirectory, depthSearch);
+                        responsePayload.addAll(prompt(tempDirectory, embedder, text, 10));
                     }
-
-                    File tempDir = Path.of(output_path).resolve("temp/").toFile();
-                    tempDir.mkdirs();
-                    clearDirectory(tempDir);
-
-                    Directory tempDirectory = getDirectory(tempDir.getAbsolutePath());
-
-                    File[] tempContextFiles = new File[depthPairs.size()];
-                    for (int i = 0; i < depthPairs.size(); i++) {
-                        Paired pair = depthPairs.get(i);
-                        tempContextFiles[i] = new File(pair.basePath);
-                    }
-
-                    loadContext(contextFiles, tempDir.getAbsolutePath(), tika, pairs, embedder, tempDirectory, depthSearch);
-                    responsePayload.addAll(prompt(tempDirectory, embedder, text, 10));
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
                 
                 exchange.sendResponseHeaders(200, 0);
