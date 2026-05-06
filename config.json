@@ -1,5 +1,6 @@
 {
     "inputPath" : "/home/siddhant/Documents/ContextMesh/",
     "outputPath" : "output/",
-    "reloadContext" : true
+    "reloadContext" : true,
+    "depthSearch" : false
 }
