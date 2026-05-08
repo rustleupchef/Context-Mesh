@@ -2,5 +2,8 @@
     "inputPath" : "/home/siddhant/Documents/ContextMesh/",
     "outputPath" : "output/",
     "reloadContext" : true,
-    "depthSearch" : false
+    "depthSearch" : false,
+    "minChunkSize" : 200,
+    "port" : 8080,
+    "append" : false
 }

@@ -44,6 +44,8 @@ import ai.djl.translate.TranslateException;
 
 public class Main {
 
+    public static SetupConfig config;
+
     private static Directory getDirectory(String outputPath) throws IOException {
         File directory = Path.of(outputPath).resolve(".index/").toFile();
         directory.mkdirs();
@@ -185,7 +187,7 @@ public class Main {
 
             String[] paragraphs = segmenter.getParagraphs();
             for (int i = 0; i < paragraphs.length; i++) {
-                if (paragraphs[i].isBlank() || paragraphs[i].length() < 200)
+                if (paragraphs[i].isBlank() || paragraphs[i].length() < config.minChunkSize)
                     continue;
 
                 String segmentBaseName = UUID.randomUUID().toString();
@@ -199,7 +201,7 @@ public class Main {
 
             String[] pages = segmenter.getPages();
             for (int i = 0; i < pages.length; i++) {
-                if (pages[i].isBlank() || pages[i].length() < 200)
+                if (pages[i].isBlank() || pages[i].length() < config.minChunkSize)
                     continue;
 
                 String segmentBaseName = UUID.randomUUID().toString();
@@ -214,7 +216,7 @@ public class Main {
             Map<String, String> sections = segmenter.getSections();
             for (Map.Entry<String, String> entry : sections.entrySet()) {
 
-                if (entry.getValue().isBlank() || entry.getValue().length() < 200)
+                if (entry.getValue().isBlank() || entry.getValue().length() < config.minChunkSize)
                     continue;
 
                 String segmentBaseName = UUID.randomUUID().toString();
@@ -235,7 +237,9 @@ public class Main {
         StandardAnalyzer _analyzer = new StandardAnalyzer();
         IndexWriterConfig _config = new IndexWriterConfig(_analyzer);
         IndexWriter _writer = new IndexWriter(directory, _config);
-        _writer.deleteAll();
+
+        if (!config.append)
+            _writer.deleteAll();
 
         System.out.println("\n\nIndexing documents...");
         _current = 0;
@@ -269,8 +273,6 @@ public class Main {
 
     public static void main(String[] args) throws Exception {
         Gson gson = new Gson();
-        SetupConfig config = null;
-
         try (FileReader reader = new FileReader("config.json")) {
             config = gson.fromJson(reader, SetupConfig.class);
         } catch (Exception e) {
@@ -311,7 +313,7 @@ public class Main {
         if (config.reloadContext)
             loadContext(contextFiles, output_path, tika, pairs, embedder, directory, false);
 
-        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+        HttpServer server = HttpServer.create(new InetSocketAddress(config.port), 0);
 
         server.createContext("/api/prompt", exchange -> {
             if ("POST".equals(exchange.getRequestMethod())) {
